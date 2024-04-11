@@ -12,6 +12,10 @@ type EventDistributor[T any] struct {
 
 	nextRefcount int64
 	waiters      chan struct{}
+
+	onBufsizeChange []func(size int)
+	onSubmit        []func(item T)
+	onFullyConsumed []func(item T)
 }
 
 type eventInfo[T any] struct {
@@ -19,10 +23,48 @@ type eventInfo[T any] struct {
 	value    T
 }
 
+// NewEventDistributor creates a new EventDistributor with the provided options.
+//
+// If you don't have any options to set, the zero value of an EventDistributor is also valid.
+func NewEventDistributor[T any](options ...DistributorOptions[T]) *EventDistributor[T] {
+	d := &EventDistributor[T]{
+		mu:              sync.Mutex{},
+		basePosition:    0,
+		buf:             nil,
+		nextRefcount:    0,
+		waiters:         nil,
+		onBufsizeChange: nil,
+		onSubmit:        nil,
+		onFullyConsumed: nil,
+	}
+
+	for _, os := range options {
+		for _, f := range os.modify {
+			f(d)
+		}
+	}
+
+	return d
+}
+
+func runCallbacks[T any](fs []func(T), v T) {
+	for _, f := range fs {
+		f(v)
+	}
+}
+
 // Submit adds an event to the queue, notifying any waiting EventReaders
 func (d *EventDistributor[T]) Submit(value T) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	runCallbacks(d.onSubmit, value)
+
+	// If there's no readers waiting, then we should immediately discard the event.
+	if len(d.buf) == 0 && d.nextRefcount == 0 {
+		runCallbacks(d.onFullyConsumed, value)
+		return
+	}
 
 	d.buf = append(d.buf, eventInfo[T]{
 		refcount: d.nextRefcount,
@@ -33,6 +75,8 @@ func (d *EventDistributor[T]) Submit(value T) {
 		close(d.waiters)
 		d.waiters = nil
 	}
+
+	runCallbacks(d.onBufsizeChange, len(d.buf))
 }
 
 // Subscribe creates a new EventReader to receive future events from the EventDistributor.
@@ -131,7 +175,13 @@ func (d *EventDistributor[T]) cleanupOldEvents() {
 	for ; firstNonEmpty < len(d.buf); firstNonEmpty += 1 {
 		if d.buf[firstNonEmpty].refcount != 0 {
 			break
+		} else {
+			runCallbacks(d.onFullyConsumed, d.buf[firstNonEmpty].value)
 		}
+	}
+
+	if firstNonEmpty == 0 {
+		return
 	}
 
 	if firstNonEmpty == len(d.buf) {
@@ -140,4 +190,6 @@ func (d *EventDistributor[T]) cleanupOldEvents() {
 		d.buf = d.buf[firstNonEmpty:]
 	}
 	d.basePosition += int64(firstNonEmpty)
+
+	runCallbacks(d.onBufsizeChange, len(d.buf))
 }
