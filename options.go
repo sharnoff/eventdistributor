@@ -1,4 +1,4 @@
-package events
+package eventdistributor
 
 // DistributorOptions contains a set of options for EventDistributor initialization.
 //
