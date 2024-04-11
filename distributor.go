@@ -139,4 +139,5 @@ func (d *EventDistributor[T]) cleanupOldEvents() {
 	} else {
 		d.buf = d.buf[firstNonEmpty:]
 	}
+	d.basePosition += int64(firstNonEmpty)
 }
