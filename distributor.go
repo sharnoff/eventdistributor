@@ -4,7 +4,7 @@ import (
 	"sync"
 )
 
-type EventDistributor[T any] struct {
+type Distributor[T any] struct {
 	mu sync.Mutex
 
 	basePosition int64
@@ -23,11 +23,11 @@ type eventInfo[T any] struct {
 	value    T
 }
 
-// NewEventDistributor creates a new EventDistributor with the provided options.
+// New creates a new Distributor with the provided options.
 //
-// If you don't have any options to set, the zero value of an EventDistributor is also valid.
-func NewEventDistributor[T any](options ...DistributorOptions[T]) *EventDistributor[T] {
-	d := &EventDistributor[T]{
+// If you don't have any options to set, the zero value of an Distributor is also valid.
+func New[T any](options ...Options[T]) *Distributor[T] {
+	d := &Distributor[T]{
 		mu:              sync.Mutex{},
 		basePosition:    0,
 		buf:             nil,
@@ -53,8 +53,8 @@ func runCallbacks[T any](fs []func(T), v T) {
 	}
 }
 
-// Submit adds an event to the queue, notifying any waiting EventReaders
-func (d *EventDistributor[T]) Submit(value T) {
+// Submit adds an event to the queue, notifying any waiting Readers
+func (d *Distributor[T]) Submit(value T) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -79,23 +79,23 @@ func (d *EventDistributor[T]) Submit(value T) {
 	runCallbacks(d.onBufsizeChange, len(d.buf))
 }
 
-// Subscribe creates a new EventReader to receive future events from the EventDistributor.
+// Subscribe creates a new Reader to receive future events from the Distributor.
 //
-// It is STRONGLY recommended to defer (*EventReader[T]).Unsubscribe() immediately after
+// It is STRONGLY recommended to defer (*Reader[T]).Unsubscribe() immediately after
 // subscribing.
-func (d *EventDistributor[T]) Subscribe() EventReader[T] {
+func (d *Distributor[T]) Subscribe() Reader[T] {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	d.nextRefcount += 1
-	return EventReader[T]{
+	return Reader[T]{
 		d:        d,
 		position: d.basePosition + int64(len(d.buf)),
 	}
 }
 
-type EventReader[T any] struct {
-	d        *EventDistributor[T]
+type Reader[T any] struct {
+	d        *Distributor[T]
 	position int64
 }
 
@@ -105,9 +105,9 @@ var closedChannel <-chan struct{} = func() <-chan struct{} {
 	return ch
 }()
 
-// WaitChan returns a channel that will be closed once there is an event that this EventReader has
+// WaitChan returns a channel that will be closed once there is an event that this Reader has
 // not yet seen.
-func (r *EventReader[T]) WaitChan() <-chan struct{} {
+func (r *Reader[T]) WaitChan() <-chan struct{} {
 	r.d.mu.Lock()
 	defer r.d.mu.Unlock()
 
@@ -123,7 +123,7 @@ func (r *EventReader[T]) WaitChan() <-chan struct{} {
 
 // Consume returns the first event that has not yet been seen by this Reader, marking it as "seen"
 // so that the next call to WaitChan() will require a newer event.
-func (r *EventReader[T]) Consume() T {
+func (r *Reader[T]) Consume() T {
 	r.d.mu.Lock()
 	defer r.d.mu.Unlock()
 
@@ -142,12 +142,12 @@ func (r *EventReader[T]) Consume() T {
 	return value
 }
 
-// Unsubscribe de-registers the EventReader, freeing any buffered events that may have been kept for
+// Unsubscribe de-registers the Reader, freeing any buffered events that may have been kept for
 // it.
 //
-// If you stop using an EventReader and never call Unsubscribe, unread events will slowly
+// If you stop using an Reader and never call Unsubscribe, unread events will slowly
 // accumulate, increasing the memory usage of your program.
-func (r *EventReader[T]) Unsubscribe() {
+func (r *Reader[T]) Unsubscribe() {
 	r.d.mu.Lock()
 	defer r.d.mu.Unlock()
 
@@ -161,12 +161,12 @@ func (r *EventReader[T]) Unsubscribe() {
 		r.d.nextRefcount -= 1
 	}
 
-	// For safety, remove the EventDistributor pointer so that future calls to Unsubscribe() will
+	// For safety, remove the Distributor pointer so that future calls to Unsubscribe() will
 	// panic, rather than silently corrupt the buffer.
 	r.d = nil
 }
 
-func (d *EventDistributor[T]) cleanupOldEvents() {
+func (d *Distributor[T]) cleanupOldEvents() {
 	if len(d.buf) == 0 {
 		return
 	}
