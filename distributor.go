@@ -130,6 +130,7 @@ func (r *EventReader[T]) Consume() T {
 	idx := int(r.position - r.d.basePosition)
 	value := r.d.buf[idx].value
 	r.d.buf[idx].refcount -= 1
+	r.position += 1
 
 	if idx+1 < len(r.d.buf) {
 		r.d.buf[idx+1].refcount += 1
