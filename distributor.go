@@ -54,6 +54,8 @@ func runCallbacks[T any](fs []func(T), v T) {
 }
 
 // Submit adds an event to the queue, notifying any waiting Readers
+//
+// Submit is thread-safe.
 func (d *Distributor[T]) Submit(value T) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -83,6 +85,8 @@ func (d *Distributor[T]) Submit(value T) {
 //
 // It is STRONGLY recommended to defer (*Reader[T]).Unsubscribe() immediately after
 // subscribing.
+//
+// Subscribe is thread-safe.
 func (d *Distributor[T]) Subscribe() Reader[T] {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -107,6 +111,8 @@ var closedChannel <-chan struct{} = func() <-chan struct{} {
 
 // WaitChan returns a channel that will be closed once there is an event that this Reader has
 // not yet seen.
+//
+// WaitChan is thread-safe.
 func (r *Reader[T]) WaitChan() <-chan struct{} {
 	r.d.mu.Lock()
 	defer r.d.mu.Unlock()
@@ -123,6 +129,8 @@ func (r *Reader[T]) WaitChan() <-chan struct{} {
 
 // Consume returns the first event that has not yet been seen by this Reader, marking it as "seen"
 // so that the next call to WaitChan() will require a newer event.
+//
+// Consume is thread-safe.
 func (r *Reader[T]) Consume() T {
 	r.d.mu.Lock()
 	defer r.d.mu.Unlock()
@@ -147,6 +155,8 @@ func (r *Reader[T]) Consume() T {
 //
 // If you stop using an Reader and never call Unsubscribe, unread events will slowly
 // accumulate, increasing the memory usage of your program.
+//
+// Unsubscribe is thread-safe.
 func (r *Reader[T]) Unsubscribe() {
 	r.d.mu.Lock()
 	defer r.d.mu.Unlock()
