@@ -30,9 +30,10 @@ func TestDistibutor(t *testing.T) {
 	distributor := eventdistributor.New(options)
 
 	t.Log("submit w/o consumers should be immediately considered consumed")
-	distributor.Submit(MyEvent{id: 1})
+	s1 := distributor.Submit(MyEvent{id: 1})
 	require.Equal(t, 1, len(submitted))
 	require.Equal(t, 1, len(consumed))
+	nowReady(t, s1)
 
 	t.Log("immediately after subscribe, no events are ready")
 	r1 := distributor.Subscribe()
@@ -44,10 +45,11 @@ func TestDistibutor(t *testing.T) {
 
 	t.Log("submit 2")
 	t.Log("after submit, size changes but nothing is consumed")
-	distributor.Submit(MyEvent{id: 2})
+	s2 := distributor.Submit(MyEvent{id: 2})
 	require.Equal(t, 1, len(sizeChanges))
 	require.Equal(t, 2, len(submitted))
 	require.Equal(t, 1, len(consumed))
+	nowNotReady(t, s2)
 
 	t.Log("after submit, readers are ready")
 	ready(t, r1)
@@ -61,10 +63,12 @@ func TestDistibutor(t *testing.T) {
 	require.Equal(t, 1, len(consumed))
 	notReady(t, r1)
 	ready(t, r2)
+	nowNotReady(t, s2)
 	e = r2.Consume()
 	require.Equal(t, 2, e.id)
 	require.Equal(t, 2, len(consumed))
 	notReady(t, r2)
+	nowReady(t, s2)
 
 	t.Log("Add another consumer")
 	r3 := distributor.Subscribe()
@@ -74,7 +78,7 @@ func TestDistibutor(t *testing.T) {
 
 	t.Log("submit 3")
 	t.Log("only one consumer reads")
-	distributor.Submit(MyEvent{id: 3})
+	s3 := distributor.Submit(MyEvent{id: 3})
 	ready(t, r1)
 	ready(t, r2)
 	ready(t, r3)
@@ -82,10 +86,11 @@ func TestDistibutor(t *testing.T) {
 	notReady(t, r1)
 	require.Equal(t, 3, e.id)
 	require.Equal(t, 2, len(consumed))
+	nowNotReady(t, s3)
 
 	t.Log("submit 4")
 	t.Log("two consumers read")
-	distributor.Submit(MyEvent{id: 4})
+	s4 := distributor.Submit(MyEvent{id: 4})
 	ready(t, r1)
 	e = r1.Consume()
 	require.Equal(t, 4, e.id)
@@ -94,6 +99,8 @@ func TestDistibutor(t *testing.T) {
 	require.Equal(t, 3, e.id)
 	ready(t, r2)
 	require.Equal(t, 2, len(consumed))
+	nowNotReady(t, s3)
+	nowNotReady(t, s4)
 
 	t.Log("three consumers read")
 	distributor.Submit(MyEvent{id: 5})
@@ -109,6 +116,8 @@ func TestDistibutor(t *testing.T) {
 	require.Equal(t, 3, e.id)
 	ready(t, r3)
 	require.Equal(t, 3, len(consumed))
+	nowReady(t, s3)
+	nowNotReady(t, s4)
 
 	t.Log("new reader doesn't see pending stuff")
 	r4 := distributor.Subscribe()
@@ -117,6 +126,7 @@ func TestDistibutor(t *testing.T) {
 	t.Log("events are considered consumed when reader unsubscribes")
 	r3.Unsubscribe()
 	require.Equal(t, 4, len(consumed))
+	nowReady(t, s4)
 }
 
 func notReady(t *testing.T, reader eventdistributor.Reader[MyEvent]) {

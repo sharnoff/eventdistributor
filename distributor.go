@@ -19,8 +19,9 @@ type Distributor[T any] struct {
 }
 
 type eventInfo[T any] struct {
-	refcount int64
-	value    T
+	refcount    int64
+	value       T
+	allConsumed chan struct{}
 }
 
 // New creates a new Distributor with the provided options.
@@ -53,10 +54,13 @@ func runCallbacks[T any](fs []func(T), v T) {
 	}
 }
 
-// Submit adds an event to the queue, notifying any waiting Readers
+// Submit adds an event to the queue, notifying any waiting Readers.
+//
+// The returned channel is closed when no remaining Readers are able
+// to consume the value - either by Consume() or Unsubscribe().
 //
 // Submit is thread-safe.
-func (d *Distributor[T]) Submit(value T) {
+func (d *Distributor[T]) Submit(value T) <-chan struct{} {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -65,12 +69,15 @@ func (d *Distributor[T]) Submit(value T) {
 	// If there's no readers waiting, then we should immediately discard the event.
 	if len(d.buf) == 0 && d.nextRefcount == 0 {
 		runCallbacks(d.onFullyConsumed, value)
-		return
+		return closedChannel
 	}
 
+	allConsumed := make(chan struct{})
+
 	d.buf = append(d.buf, eventInfo[T]{
-		refcount: d.nextRefcount,
-		value:    value,
+		refcount:    d.nextRefcount,
+		value:       value,
+		allConsumed: allConsumed,
 	})
 	d.nextRefcount = 0
 	if d.waiters != nil {
@@ -79,6 +86,8 @@ func (d *Distributor[T]) Submit(value T) {
 	}
 
 	runCallbacks(d.onBufsizeChange, len(d.buf))
+
+	return allConsumed
 }
 
 // Subscribe creates a new Reader to receive future events from the Distributor.
@@ -188,6 +197,7 @@ func (d *Distributor[T]) cleanupOldEvents() {
 			break
 		} else {
 			runCallbacks(d.onFullyConsumed, d.buf[firstNonEmpty].value)
+			close(d.buf[firstNonEmpty].allConsumed)
 		}
 	}
 
