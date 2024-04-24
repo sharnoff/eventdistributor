@@ -1,6 +1,6 @@
 module github.com/sharnoff/eventdistributor
 
-go 1.22.2
+go 1.18
 
 require github.com/stretchr/testify v1.9.0
 
