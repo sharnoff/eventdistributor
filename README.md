@@ -10,3 +10,8 @@ event.
 Events are buffered until all readers have seen them.
 
 The implementation is rather small - feel free to read there for more information.
+
+## Add-ons
+
+- [keyeddistributor](https://github.com/memsql/keyeddistributor) is a wrapper that allows
+  subscribing to specific values.
